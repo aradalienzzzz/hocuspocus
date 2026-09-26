@@ -1,8 +1,10 @@
 import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react'
 import { RefreshCw, ShieldAlert, ShieldCheck, Lock, Loader2 } from 'lucide-react'
 import { useUiTranslation } from '../../i18n'
+import { isHostedProviderUrl, MINIMAX_CHAT_MODELS, switchTextProvider } from '../../lib/productionProfile'
 import { useStore } from '../../stores/useStore'
 import { testLlmConnection } from '../../api/client'
+
 
 const McpSettingsPanel = lazy(() => import('./McpSettingsPanel').then(module => ({ default: module.McpSettingsPanel })))
 
@@ -370,17 +372,10 @@ export function ServicesSettingsPanel() {
                 value={productionProfile.text.provider}
                 onChange={e => setProductionProfile({
                   ...productionProfile,
-                  text: {
-                    ...productionProfile.text,
-                    provider: e.target.value as typeof productionProfile.text.provider,
-                    base_url: e.target.value === 'ollama'
-                      ? (productionProfile.text.base_url || 'http://127.0.0.1:11434')
-                      : e.target.value === 'grok'
-                        ? 'https://api.x.ai'
-                        : e.target.value === 'minimax'
-                          ? 'https://api.minimax.io'
-                          : productionProfile.text.base_url,
-                  },
+                  text: switchTextProvider(
+                    productionProfile.text,
+                    e.target.value as typeof productionProfile.text.provider,
+                  ),
                 })}
                 disabled={productionProfileLoading}
                 className="mt-1 w-full bg-bg-tertiary border border-border rounded-lg px-2 py-1.5 text-xs text-text-primary"
@@ -623,8 +618,13 @@ export function ServicesSettingsPanel() {
             onChange={e => {
               const newProvider = e.target.value
               const updates: Record<string, unknown> = { llm_provider: newProvider }
-              if (newProvider === 'ollama' && !servicesConfig.llm_remote_url) {
+              const staleUrl = isHostedProviderUrl(String(servicesConfig.llm_remote_url || ''))
+              if (newProvider === 'ollama' && (!servicesConfig.llm_remote_url || staleUrl)) {
                 updates.llm_remote_url = 'http://127.0.0.1:11434'
+              }
+              // A leftover MiniMax model would reroute every request to MiniMax.
+              if (newProvider !== 'minimax' && MINIMAX_CHAT_MODELS.has(String(servicesConfig.llm_model_id || ''))) {
+                updates.llm_model_id = ''
               }
               if (newProvider === 'grok' && !servicesConfig.llm_remote_url) {
                 updates.llm_remote_url = 'https://api.x.ai'
