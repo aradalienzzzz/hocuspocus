@@ -740,13 +740,8 @@ def normalize_minimax_chat_routing(
     provider: str,
     remote_url: str = "",
 ) -> tuple[str, str]:
-    """MiniMax chat ids are hosted API models, never local GGUF files.
-
-    Only an unset/local provider is rerouted; an explicit provider such as
-    Ollama keeps its own endpoint instead of silently calling MiniMax.
-    """
-    if (str(model_id or "").strip() in MINIMAX_CHAT_MODELS
-            and str(provider or "local").strip().lower() in ("", "local", "minimax")):
+    """MiniMax chat ids are hosted API models, never local GGUF files."""
+    if str(model_id or "").strip() in MINIMAX_CHAT_MODELS:
         return "minimax", str(remote_url or "").strip() or "https://api.minimax.io"
     return str(provider or "local"), str(remote_url or "")
 
@@ -785,33 +780,6 @@ def _is_ollama_remote() -> bool:
     return looks_like_ollama(_remote_url)
 
 
-_OLLAMA_VISION_CACHE: dict[tuple[str, str], bool] = {}
-
-
-def _remote_accepts_images() -> bool:
-    """Whether the active remote model can take image input.
-
-    Ollama rejects image parts for text-only models, and reports each model's
-    capabilities through /api/show. Other remote providers keep the previous
-    behaviour of receiving images.
-    """
-    if _provider not in ("remote", "ollama", "openai", "minimax", "grok"):
-        return False
-    if not _is_ollama_remote():
-        return True
-    key = (_server_url(), str(_model_id or ""))
-    if key not in _OLLAMA_VISION_CACHE:
-        try:
-            response = requests.post(f"{key[0]}/api/show", json={"model": key[1]}, timeout=5)
-            response.raise_for_status()
-            _OLLAMA_VISION_CACHE[key] = "vision" in (response.json().get("capabilities") or [])
-        except Exception as exc:
-            # Unknown capability: keep sending images, as before this check existed.
-            logger.debug("Could not read Ollama capabilities for %s: %s", key[1], exc)
-            return True
-    return _OLLAMA_VISION_CACHE[key]
-
-
 def _is_deepseek_remote() -> bool:
     """Detect DeepSeek when it is configured through the OpenAI-compatible provider."""
     if _provider not in ("remote", "openai"):
@@ -819,17 +787,9 @@ def _is_deepseek_remote() -> bool:
     return "deepseek.com" in (_remote_url or "").lower()
 
 
-HOSTED_KEY_PROVIDERS = frozenset({"openai", "anthropic", "minimax", "grok"})
-
-
 def _api_headers() -> dict:
     """Build headers for API calls (adds auth for remote providers)."""
     headers = {"Content-Type": "application/json"}
-    if _provider in HOSTED_KEY_PROVIDERS and not _api_key:
-        raise RuntimeError(
-            f"No {_provider} API key is configured. Add it in Settings → Services, "
-            "or switch the text provider to Ollama or Local."
-        )
     if _provider in ("remote", "ollama", "openai", "anthropic", "minimax", "grok") and _api_key:
         if _provider == "anthropic":
             headers["x-api-key"] = _api_key
@@ -2221,9 +2181,6 @@ def generate(
         messages.append({"role": "system", "content": system_prompt})
 
     # Build user message — multimodal if images provided and vision is available
-    if image_paths and not _vision_available and not _remote_accepts_images():
-        print(f"[LLM] {_model_id} cannot read images; sending the text prompt without {len(image_paths)} image(s)")
-        image_paths = None
     if image_paths and (_vision_available or _provider in ("remote", "ollama", "openai", "minimax", "grok")):
         content_parts = []
         for img_path in image_paths:
@@ -2883,9 +2840,6 @@ def generate_streaming(
         messages.append({"role": "system", "content": system_prompt})
 
     # Build user message — multimodal if images provided and vision is available
-    if image_paths and not _vision_available and not _remote_accepts_images():
-        print(f"[LLM] {_model_id} cannot read images; sending the text prompt without {len(image_paths)} image(s)")
-        image_paths = None
     if image_paths and (_vision_available or _provider in ("remote", "ollama", "openai", "minimax", "grok")):
         content_parts = []
         for img_path in image_paths:

@@ -184,29 +184,3 @@ export function resolveSupportedVideoFormat(
     adjusted: resolution !== requestedPreset || aspectRatio !== requestedAspect,
   }
 }
-
-export const MINIMAX_CHAT_MODELS = new Set(['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'])
-const HOSTED_TEXT_URLS: Record<string, string> = {
-  minimax: 'https://api.minimax.io',
-  grok: 'https://api.x.ai',
-}
-
-export function isHostedProviderUrl(url: string): boolean {
-  return Object.values(HOSTED_TEXT_URLS).some(hosted => url.replace(/\/+$/, '').startsWith(hosted))
-}
-
-/** Switch the production text provider without carrying another provider's model or URL. */
-export function switchTextProvider<T extends { provider: string; model: string; base_url?: string }>(
-  text: T,
-  provider: T['provider'],
-): T {
-  const current = text.base_url || ''
-  const base_url = HOSTED_TEXT_URLS[provider]
-    ?? (provider === 'ollama'
-      ? (current && !isHostedProviderUrl(current) ? current : 'http://127.0.0.1:11434')
-      : isHostedProviderUrl(current) ? '' : current)
-  const model = provider === 'minimax'
-    ? (MINIMAX_CHAT_MODELS.has(text.model) ? text.model : 'MiniMax-M3')
-    : MINIMAX_CHAT_MODELS.has(text.model) ? '' : text.model
-  return { ...text, provider, base_url, model }
-}
